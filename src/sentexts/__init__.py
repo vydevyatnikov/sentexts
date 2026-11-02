@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 
-_default_root = Path(__file__).resolve().parent.parent
+_default_root = Path(__file__).resolve().parent
 os.environ.setdefault("CONFIG_PATH", str(_default_root / "config.json"))
 _config_path = Path(os.environ["CONFIG_PATH"]).expanduser().resolve()
 os.environ.setdefault("ENV_PATH", str(_config_path.parent / ".env"))

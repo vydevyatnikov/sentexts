@@ -72,7 +72,7 @@ class Settings:
     """Runtime settings; update() validates everything before changing either field."""
 
     def __init__(self) -> None:
-        default = Path(__file__).resolve().parent.parent / "config.json"
+        default = Path(__file__).resolve().parent / "config.json"
         self.config_path = Path(os.environ.get("CONFIG_PATH", default)).expanduser().resolve()
         self.storage_dir, self.cloud_folder = self.load_config()
 

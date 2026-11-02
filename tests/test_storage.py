@@ -66,3 +66,44 @@ def test_directory_cannot_be_read_as_text(client):
     (client.settings.storage_dir / "directory.txt").mkdir()
     with pytest.raises(UnsafePathError):
         client.read("directory.txt")
+
+
+@pytest.mark.parametrize("requested, stored", [
+    ("решение", "решение.txt"),
+    ("Решение 42", "Решение 42.txt"),
+    ("1-123_2026", "1-123_2026.txt"),
+    ("решение.txt", "решение.txt"),
+    ("решение.TXT", "решение.TXT"),
+])
+def test_read_name_with_optional_extension_uses_existing_copy(client, requested, stored):
+    (client.settings.storage_dir / stored).write_text("cached", encoding="utf-8")
+    assert client.read(requested) == {stored: "cached"}
+
+
+def test_read_without_extension_downloads_full_txt_name(client, sdk):
+    assert client.read("Решение 42") == {"Решение 42.txt": "Суд постановил.\n"}
+    sdk[0].get_object.assert_called_once_with(
+        Bucket="test-corpus", Key="Судебные решения/Решение 42.txt",
+    )
+    assert sorted(p.name for p in client.settings.storage_dir.iterdir()) == ["Решение 42.txt"]
+
+
+def test_read_mixed_names_from_generator_reuses_normalized_cache(client, sdk):
+    names = iter(["first", "second.txt", "UPPER.TXT", "first.txt"])
+    assert client.read(names) == {
+        "first.txt": "Суд постановил.\n",
+        "second.txt": "Суд постановил.\n",
+        "UPPER.TXT": "Суд постановил.\n",
+    }
+    assert sdk[0].get_object.call_count == 3
+
+
+@pytest.mark.parametrize("name", [
+    "../escape", "sub/file", "sub\\file", "/absolute", "C:\\absolute", "C:relative",
+    "bad\x00", "bad\n", "CON", "COM1", "report ", "report.", ".", "..", "   ",
+])
+def test_short_names_are_validated_before_extension_is_added(client, sdk, name):
+    with pytest.raises(UnsafePathError):
+        client.read(name)
+    sdk[1].assert_not_called()
+    assert list(client.settings.storage_dir.iterdir()) == []

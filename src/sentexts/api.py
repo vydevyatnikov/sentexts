@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Iterable
+from getpass import getpass
+from dotenv import set_key
 
 from .config import Settings
 from .storage import LocalStorage, upload_files
@@ -31,11 +34,24 @@ class Sentexts:
     def save_settings(self) -> Path:
         return self._settings.save_config()
 
+    @staticmethod
+    def update_env() -> None:
+        access_key = getpass(prompt="Новый Access key (символы не будут видны):")
+        secret_key = getpass(prompt="Новый Secret Access key (символы не будут видны):")
+        if not access_key or not secret_key:
+            raise ValueError('Ключи не должны быть пустыми')
+
+        env_pat = Path(os.environ.get("ENV_PATH"))
+        set_key(env_pat, 'AWS_ACCESS_KEY_ID', access_key)
+        set_key(env_pat, 'AWS_SECRET_ACCESS_KEY', secret_key)
+
+        print('Ключи сохранены')
+
     def exists(self, filename: str) -> bool:
         return self._storage.exists(filename)
 
     def read(self, filenames: str | Iterable[str], *, encoding: str = "utf-8") -> dict[str, str]:
-        """Return available texts; warn and skip object names absent from the selected S3 prefix."""
+        """Read full .txt names or stems; warn and skip missing cloud objects."""
         if isinstance(filenames, str):
             filenames = [filenames]
         return self._storage.read(filenames, self.settings.cloud_folder, encoding=encoding)

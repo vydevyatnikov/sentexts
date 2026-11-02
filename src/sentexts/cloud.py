@@ -60,7 +60,7 @@ MAX_UPLOAD_SIZE = 5 * 1024 ** 3
 def load_credentials(env_path: str | Path | None = None) -> tuple[str, str]:
     """Read only the selected .env, without interpolation or ambient credentials."""
     if env_path is None:
-        default = Path(__file__).resolve().parent.parent / ".env"
+        default = Path(__file__).resolve().parent / ".env"
         env_path = os.environ.get("ENV_PATH", default)
     try:
         values = dotenv_values(Path(env_path).expanduser(), interpolate=False)

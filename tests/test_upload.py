@@ -1,7 +1,6 @@
 from pathlib import Path
 import traceback
 
-import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError, ReadTimeoutError
 from botocore.parsers import ResponseParserError
@@ -242,9 +241,9 @@ def test_local_open_error_is_not_hidden(client, sdk, tmp_path, monkeypatch):
     sdk[0].close.assert_called_once_with()
 
 
-def test_conditional_put_uses_real_sdk_contract_without_network(client, credentials, tmp_path, monkeypatch):
+def test_conditional_put_uses_real_sdk_contract_without_network(client, credentials, tmp_path, monkeypatch, s3_session):
     source = local_file(tmp_path, "one.txt", b"SDK upload")
-    s3 = boto3.client(
+    s3 = s3_session.client(
         "s3", endpoint_url="https://storage.yandexcloud.net", region_name="ru-central1",
         aws_access_key_id=credentials[0], aws_secret_access_key=credentials[1],
         config=Config(signature_version="s3v4"),

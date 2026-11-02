@@ -13,15 +13,16 @@ class UnsafePathError(ValueError):
     """A filename or filesystem object is unsafe for text storage."""
 
 
-def validate_filename(filename: str) -> str:
-    """Accept one portable .txt basename, including Unicode and internal spaces."""
+def validate_filename(filename: str, *, allow_stem: bool = False) -> str:
+    """Validate a portable .txt basename, optionally accepting an extensionless name."""
+    is_text = isinstance(filename, str) and filename.lower().endswith(".txt")
     if (
         not isinstance(filename, str)
         or not filename
         or any(c in '<>:"/\\|?*' or ord(c) < 32 for c in filename)
         or filename.endswith((" ", "."))
-        or not filename.lower().endswith(".txt")
-        or not filename[:-4].strip(". ")
+        or (not is_text and (not allow_stem or Path(filename).suffix))
+        or not (filename[:-4] if is_text else filename).strip(". ")
         or filename.split(".")[0].rstrip(" ").upper()
         in {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)),
             *(f"LPT{i}" for i in range(1, 10)),
@@ -87,6 +88,9 @@ class LocalStorage:
     def read(self, filenames: Iterable[str], folder: str, *, encoding: str = "utf-8") -> dict[str, str]:
         texts = {}
         for filename in filenames:
+            filename = validate_filename(filename, allow_stem=True)
+            if not filename.lower().endswith(".txt"):
+                filename += ".txt"
             path = self.path(filename)
             if path.is_symlink():
                 raise UnsafePathError("Refusing to read or overwrite a symbolic link.")

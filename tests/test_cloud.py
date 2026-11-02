@@ -4,7 +4,6 @@ from pathlib import Path
 import traceback
 import warnings
 
-import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError, EndpointConnectionError, ReadTimeoutError
 from botocore.parsers import ResponseParserError
@@ -261,9 +260,9 @@ def test_warning_as_error_does_not_expose_sdk_exception(client, sdk):
     assert list(client.settings.storage_dir.iterdir()) == []
 
 
-def test_s3_download_uses_real_sdk_contract_without_network(client, credentials, monkeypatch):
+def test_s3_download_uses_real_sdk_contract_without_network(client, credentials, monkeypatch, s3_session):
     payload = b"SDK contract\n"
-    s3 = boto3.client(
+    s3 = s3_session.client(
         "s3", endpoint_url="https://storage.yandexcloud.net",
         region_name="ru-central1",
         aws_access_key_id=credentials[0], aws_secret_access_key=credentials[1],
@@ -279,3 +278,13 @@ def test_s3_download_uses_real_sdk_contract_without_network(client, credentials,
         monkeypatch.setattr("sentexts.cloud.boto3.client", lambda *a, **kw: s3)
         assert client.read("Решение 1.TXT") == {"Решение 1.TXT": "SDK contract\n"}
         stubber.assert_no_pending_responses()
+
+
+def test_missing_short_name_warns_with_full_filename_and_creates_no_copy(client, sdk):
+    sdk[0].get_object.side_effect = sdk_error("NoSuchKey", status=404)
+    with pytest.warns(CloudFileNotFoundWarning, match="missing.txt"):
+        assert client.read("missing") == {}
+    sdk[0].get_object.assert_called_once_with(
+        Bucket="test-corpus", Key="Судебные решения/missing.txt",
+    )
+    assert list(client.settings.storage_dir.iterdir()) == []

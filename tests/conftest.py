@@ -9,6 +9,8 @@ import socket
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock
 
+import boto3
+from botocore.session import Session
 from botocore.response import StreamingBody
 import pytest
 
@@ -54,6 +56,17 @@ def credentials():
         encoding="utf-8",
     )
     return access, secret
+
+
+@pytest.fixture
+def s3_session(tmp_path):
+    """Isolate offline SDK contract checks without changing runtime AWS guards."""
+    session = Session()
+    config = session.get_component("config_store")
+    config.set_config_variable("profile", None)
+    config.set_config_variable("config_file", str(tmp_path / "unused-aws-config"))
+    config.set_config_variable("credentials_file", str(tmp_path / "unused-aws-credentials"))
+    return boto3.session.Session(botocore_session=session)
 
 
 @pytest.fixture

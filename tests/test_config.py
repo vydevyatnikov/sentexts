@@ -114,7 +114,7 @@ def test_null_defaults_are_created_but_not_implicitly_saved(client, monkeypatch,
     assert len(warnings) == 2
     assert defaults.storage_dir == tmp_path / "texts"
     assert defaults.storage_dir.is_dir()
-    assert defaults.cloud_folder == "s3://sentexts-corpus-73fa/"
+    assert defaults.cloud_folder == "s3://sentexts-corpus-73fa/texts/"
     assert json.loads(path.read_text(encoding="utf-8"))["storage_dir"] is None
 
 
