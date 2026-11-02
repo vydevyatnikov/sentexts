@@ -1,0 +1,4 @@
+{
+  "storage_dir": "texts",
+  "cloud_folder": "s3://sentexts-corpus-73fa/texts/"
+}
