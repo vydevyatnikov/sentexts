@@ -2,22 +2,15 @@ from __future__ import annotations
 
 from io import BytesIO
 import json
-import os
 from pathlib import Path
 import secrets
 import socket
-from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock
 
 import boto3
 from botocore.session import Session
 from botocore.response import StreamingBody
 import pytest
-
-# Package import prepares templates. Keep collection-time setup outside checkout.
-_bootstrap = TemporaryDirectory(prefix="sentexts-pytest-bootstrap-")
-os.environ["CONFIG_PATH"] = str(Path(_bootstrap.name) / "config.json")
-os.environ["ENV_PATH"] = str(Path(_bootstrap.name) / ".env")
 
 from sentexts import Sentexts
 
@@ -33,8 +26,9 @@ def isolated_environment(tmp_path, monkeypatch):
     }), encoding="utf-8")
     env = tmp_path / ".env"
     env.write_text("AWS_ACCESS_KEY_ID=\nAWS_SECRET_ACCESS_KEY=\n", encoding="utf-8")
-    monkeypatch.setenv("CONFIG_PATH", str(config))
-    monkeypatch.setenv("ENV_PATH", str(env))
+    monkeypatch.setattr(
+        "sentexts.config.user_config_path", lambda *args, **kwargs: tmp_path / "defaults",
+    )
 
     def forbidden(*args, **kwargs):
         raise AssertionError("Tests must not make network requests")
@@ -43,15 +37,15 @@ def isolated_environment(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def client():
-    return Sentexts()
+def client(tmp_path):
+    return Sentexts(tmp_path)
 
 
 @pytest.fixture
-def credentials():
+def credentials(tmp_path):
     access = "test-id-" + secrets.token_hex(8)
     secret = secrets.token_urlsafe(32)
-    Path(os.environ["ENV_PATH"]).write_text(
+    (tmp_path / ".env").write_text(
         f"AWS_ACCESS_KEY_ID={access}\nAWS_SECRET_ACCESS_KEY={secret}\n",
         encoding="utf-8",
     )

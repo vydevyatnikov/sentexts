@@ -26,7 +26,7 @@ def test_valid_batch_changes_runtime_then_explicitly_saves(client, tmp_path):
     assert client._storage.root == selected
     assert client.settings.config_path.read_bytes() == before
     assert client.save_settings() == client.settings.config_path
-    restored = Sentexts()
+    restored = Sentexts(client.settings.config_path.parent)
     assert restored.settings.storage_dir == selected
     assert restored.settings.cloud_folder == "s3://test-corpus/Другие решения"
     assert set(json.loads(client.settings.config_path.read_text(encoding="utf-8"))) == {
@@ -102,7 +102,7 @@ def test_failed_save_preserves_existing_json(client, monkeypatch):
 def test_malformed_config_is_not_ignored(client, content):
     client.settings.config_path.write_text(content, encoding="utf-8")
     with pytest.raises(ConfigError):
-        Settings()
+        Settings(client.settings.config_path.parent)
 
 
 def test_null_defaults_are_created_but_not_implicitly_saved(client, monkeypatch, tmp_path):
@@ -110,7 +110,7 @@ def test_null_defaults_are_created_but_not_implicitly_saved(client, monkeypatch,
     path = client.settings.config_path
     path.write_text('{"storage_dir":null,"cloud_folder":null}', encoding="utf-8")
     with pytest.warns(UserWarning) as warnings:
-        defaults = Settings()
+        defaults = Settings(client.settings.config_path.parent)
     assert len(warnings) == 2
     assert defaults.storage_dir == tmp_path / "texts"
     assert defaults.storage_dir.is_dir()
@@ -126,7 +126,7 @@ def test_relative_path_is_fixed_once(client, monkeypatch, tmp_path):
     client.settings.config_path.write_text(json.dumps({
         "storage_dir": "relative", "cloud_folder": "s3://test-corpus/texts",
     }), encoding="utf-8")
-    restored = Sentexts()
+    restored = Sentexts(client.settings.config_path.parent)
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
@@ -134,24 +134,66 @@ def test_relative_path_is_fixed_once(client, monkeypatch, tmp_path):
     assert restored.settings.storage_dir == relative
 
 
-def test_import_templates_preserve_existing_files_and_bindings(tmp_path):
-    config = tmp_path / "custom" / "config.json"
-    env = tmp_path / "credentials" / ".env"
-    child_env = os.environ.copy()
-    child_env.update(CONFIG_PATH=str(config), ENV_PATH=str(env))
-    code = (
-        "import os, pathlib, sentexts; "
-        "assert sentexts.Sentexts; "
-        "assert pathlib.Path(os.environ['CONFIG_PATH']).is_file(); "
-        "assert pathlib.Path(os.environ['ENV_PATH']).is_file()"
-    )
-    subprocess.run([sys.executable, "-I", "-c", code], env=child_env, check=True, capture_output=True)
+def test_constructor_preserves_existing_files_and_permissions(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    folder = tmp_path / "custom"
+    with pytest.warns(UserWarning):
+        app = Sentexts(folder)
+    config, env = app.settings.config_path, app.settings.env_path
     assert json.loads(config.read_text(encoding="utf-8")) == {"storage_dir": None, "cloud_folder": None}
     assert env.read_text(encoding="utf-8").endswith("AWS_SECRET_ACCESS_KEY=\n")
     if os.name == "posix":
+        assert config.stat().st_mode & 0o777 == 0o600
         assert env.stat().st_mode & 0o777 == 0o600
-    config.write_text("existing user config", encoding="utf-8")
+    config.write_text(json.dumps({
+        "storage_dir": str(app.settings.storage_dir), "cloud_folder": "s3://test-corpus/preserved",
+    }), encoding="utf-8")
     env.write_text("# existing user file\n", encoding="utf-8")
+    if os.name == "posix":
+        config.chmod(0o640)
+        env.chmod(0o640)
+    before = config.read_bytes(), env.read_bytes()
+    Sentexts(folder)
+    assert (config.read_bytes(), env.read_bytes()) == before
+    if os.name == "posix":
+        assert config.stat().st_mode & 0o777 == 0o640
+        assert env.stat().st_mode & 0o777 == 0o640
+
+
+def test_default_uses_platform_user_directory_at_construction(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    selected = tmp_path / "user-config" / "sentexts"
+    calls = []
+
+    def user_directory(appname, **kwargs):
+        calls.append((appname, kwargs))
+        return selected
+
+    monkeypatch.setattr("sentexts.config.user_config_path", user_directory)
+    with pytest.warns(UserWarning):
+        app = Sentexts()
+    assert calls == [("sentexts", {"appauthor": False})]
+    assert app.settings.config_path == selected / "config.json"
+    assert app.settings.env_path == selected / ".env"
+    assert app.settings.config_path.is_file() and app.settings.env_path.is_file()
+
+
+def test_import_does_not_create_settings_or_change_environment(tmp_path):
+    child_root = tmp_path / "import-only"
+    child_env = os.environ.copy()
+    child_env.update(
+        XDG_CONFIG_HOME=str(child_root / "user-config"),
+        SETTINGS_PATH=str(child_root / "unused-settings"),
+        CONFIG_PATH=str(child_root / "unused.json"),
+        ENV_PATH=str(child_root / "unused.env"),
+    )
+    code = (
+        "import os; "
+        "names=('SETTINGS_PATH','CONFIG_PATH','ENV_PATH'); "
+        "before={name:os.environ.get(name) for name in names}; "
+        "import sentexts; "
+        "assert sentexts.Sentexts; "
+        "assert {name:os.environ.get(name) for name in names}==before"
+    )
     subprocess.run([sys.executable, "-I", "-c", code], env=child_env, check=True, capture_output=True)
-    assert config.read_text(encoding="utf-8") == "existing user config"
-    assert env.read_text(encoding="utf-8") == "# existing user file\n"
+    assert not child_root.exists()

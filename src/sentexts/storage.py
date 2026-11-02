@@ -33,7 +33,8 @@ def validate_filename(filename: str, *, allow_stem: bool = False) -> str:
 
 
 def upload_files(
-    paths: str | Path | Iterable[str | Path], folder: str, *, overwrite: bool = False,
+    paths: str | Path | Iterable[str | Path], folder: str, *,
+    env_path: str | Path, overwrite: bool = False,
 ) -> dict[str, str]:
     """Validate an explicit batch before uploading, without changing local data."""
     if not isinstance(overwrite, bool):
@@ -60,7 +61,7 @@ def upload_files(
         selected[name] = source
     if not selected:
         return {}
-    return upload(selected.values(), folder, overwrite=overwrite)
+    return upload(selected.values(), folder, env_path=env_path, overwrite=overwrite)
 
 
 class LocalStorage:
@@ -85,7 +86,10 @@ class LocalStorage:
             if path.suffix.lower() == ".txt" and not path.is_symlink() and path.is_file()
         )
 
-    def read(self, filenames: Iterable[str], folder: str, *, encoding: str = "utf-8") -> dict[str, str]:
+    def read(
+        self, filenames: Iterable[str], folder: str, *,
+        env_path: str | Path, encoding: str = "utf-8",
+    ) -> dict[str, str]:
         texts = {}
         for filename in filenames:
             filename = validate_filename(filename, allow_stem=True)
@@ -95,7 +99,7 @@ class LocalStorage:
             if path.is_symlink():
                 raise UnsafePathError("Refusing to read or overwrite a symbolic link.")
             if not path.exists():
-                if not download(filename, path, folder):
+                if not download(filename, path, folder, env_path=env_path):
                     continue
             if not path.is_file():
                 raise UnsafePathError("The local text is not a regular file.")

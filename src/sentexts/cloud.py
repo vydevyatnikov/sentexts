@@ -57,11 +57,8 @@ class CloudFileExistsError(CloudError):
 MAX_UPLOAD_SIZE = 5 * 1024 ** 3
 
 
-def load_credentials(env_path: str | Path | None = None) -> tuple[str, str]:
+def load_credentials(env_path: str | Path) -> tuple[str, str]:
     """Read only the selected .env, without interpolation or ambient credentials."""
-    if env_path is None:
-        default = Path(__file__).resolve().parent / ".env"
-        env_path = os.environ.get("ENV_PATH", default)
     try:
         values = dotenv_values(Path(env_path).expanduser(), interpolate=False)
     except UnicodeError:
@@ -75,8 +72,8 @@ def load_credentials(env_path: str | Path | None = None) -> tuple[str, str]:
     return access.strip(), secret.strip()
 
 
-def _client():
-    access, secret = load_credentials()
+def _client(env_path: str | Path):
+    access, secret = load_credentials(env_path)
     return boto3.client(
         "s3",
         endpoint_url="https://storage.yandexcloud.net",
@@ -121,7 +118,7 @@ def _client_failure(error: ClientError, operation: str) -> CloudError:
     return CloudError(f"Object Storage could not complete the {operation}.")
 
 
-def download(filename: str, destination: Path, folder: str) -> bool:
+def download(filename: str, destination: Path, folder: str, *, env_path: str | Path) -> bool:
     """Stream one object into a temporary file, publishing only a complete copy.
 
     The storage layer validates the basename. SDK exception messages and chained
@@ -139,7 +136,7 @@ def download(filename: str, destination: Path, folder: str) -> bool:
         ) as stream:
             temporary = Path(stream.name)
             missing_file = False
-            with closing(_client()) as client:
+            with closing(_client(env_path)) as client:
                 try:
                     response = client.get_object(Bucket=bucket, Key=key)
                 except ClientError as error:
@@ -178,7 +175,9 @@ def download(filename: str, destination: Path, folder: str) -> bool:
             temporary.unlink(missing_ok=True)
 
 
-def upload(sources: Iterable[Path], folder: str, *, overwrite: bool = False) -> dict[str, str]:
+def upload(
+    sources: Iterable[Path], folder: str, *, env_path: str | Path, overwrite: bool = False,
+) -> dict[str, str]:
     """Stream an already validated batch to S3 using a single SDK client.
 
     The storage layer validates local paths and basenames. The no-overwrite
@@ -190,7 +189,7 @@ def upload(sources: Iterable[Path], folder: str, *, overwrite: bool = False) -> 
     bucket, prefix = split_cloud_folder(folder)
     uploaded = {}
     try:
-        with closing(_client()) as client:
+        with closing(_client(env_path)) as client:
             for source in sources:
                 key = f"{prefix}/{source.name}" if prefix else source.name
                 with source.open("rb") as stream:

@@ -9,6 +9,8 @@ from pathlib import Path
 import tempfile
 import warnings
 
+from platformdirs import user_config_path
+
 
 class ConfigError(ValueError):
     """The JSON configuration or a setting is invalid."""
@@ -71,9 +73,28 @@ def _cloud_folder(value: str) -> str:
 class Settings:
     """Runtime settings; update() validates everything before changing either field."""
 
-    def __init__(self) -> None:
-        default = Path(__file__).resolve().parent / "config.json"
-        self.config_path = Path(os.environ.get("CONFIG_PATH", default)).expanduser().resolve()
+    def __init__(self, settings_path: str | Path | None = None) -> None:
+        if settings_path is None:
+            settings_path = user_config_path("sentexts", appauthor=False)
+        directory = Path(settings_path).expanduser().resolve()
+        self.config_path = directory / "config.json"
+        self.env_path = directory / ".env"
+
+        for _path, _contents in (
+                (self.config_path, json.dumps({"storage_dir": None, "cloud_folder": None}, indent=2) + "\n"),
+                (self.env_path,
+                 "# Enter your personal S3 keys with the required permissions; never commit this file.\nAWS_ACCESS_KEY_ID=\nAWS_SECRET_ACCESS_KEY=\n"),
+        ):
+            _path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                with os.fdopen(
+                        os.open(_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600),
+                        "w", encoding="utf-8", newline="\n",
+                ) as _stream:
+                    _stream.write(_contents)
+            except FileExistsError:
+                pass
+
         self.storage_dir, self.cloud_folder = self.load_config()
 
     def load_config(self) -> tuple[Path, str]:

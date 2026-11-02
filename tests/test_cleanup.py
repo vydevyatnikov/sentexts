@@ -70,7 +70,7 @@ def test_symlinks_are_skipped_and_external_target_is_preserved(client, tmp_path)
 
 def test_initialization_and_read_never_clean_files(client):
     (path,) = populate(client, ["old.txt"])
-    restored = Sentexts()
+    restored = Sentexts(client.settings.config_path.parent)
     assert restored.read(path.name) == {path.name: "text"}
     assert path.exists()
 

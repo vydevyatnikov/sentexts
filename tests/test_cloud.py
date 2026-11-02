@@ -133,9 +133,9 @@ def test_malformed_sdk_response_is_sanitized_and_client_is_closed(client, sdk):
     "YANDEX_OAUTH_TOKEN=legacy\n",
 ])
 def test_partial_and_legacy_credentials_are_not_accepted(client, content):
-    Path(os.environ["ENV_PATH"]).write_text(content, encoding="utf-8")
+    client.settings.env_path.write_text(content, encoding="utf-8")
     with pytest.raises(MissingCredentialsError):
-        load_credentials()
+        load_credentials(client.settings.env_path)
 
 
 def test_credentials_use_selected_file_without_interpolation_or_environment_changes(
@@ -146,10 +146,10 @@ def test_credentials_use_selected_file_without_interpolation_or_environment_chan
         "AWS_ACCESS_KEY_ID=selected-id\nAWS_SECRET_ACCESS_KEY=$" "{SENTEXTS_TEST_VALUE}\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv("ENV_PATH", str(selected))
+    monkeypatch.setenv("ENV_PATH", str(tmp_path / "ignored.env"))
     monkeypatch.setenv("SENTEXTS_TEST_VALUE", "must-not-expand")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "must-not-change")
-    assert load_credentials() == ("selected-id", "$" "{SENTEXTS_TEST_VALUE}")
+    assert load_credentials(selected) == ("selected-id", "$" "{SENTEXTS_TEST_VALUE}")
     assert os.environ["AWS_SECRET_ACCESS_KEY"] == "must-not-change"
 
 
@@ -164,9 +164,9 @@ def test_explicit_credentials_file_overrides_env_path(tmp_path):
 
 def test_invalid_credentials_encoding_is_sanitized(client, credentials):
     secret = credentials[1]
-    Path(os.environ["ENV_PATH"]).write_bytes(secret.encode() + b"\xff")
+    client.settings.env_path.write_bytes(secret.encode() + b"\xff")
     with pytest.raises(ConfigError) as caught:
-        load_credentials()
+        load_credentials(client.settings.env_path)
     diagnostic = "".join(traceback.format_exception(caught.type, caught.value, caught.tb))
     assert secret not in diagnostic
 
@@ -188,7 +188,7 @@ def test_missing_download_parent_keeps_original_error(client):
     with pytest.raises(FileNotFoundError):
         download(
             "one.txt", client.settings.storage_dir / "missing" / "one.txt",
-            "s3://test-corpus/texts",
+            "s3://test-corpus/texts", env_path=client.settings.env_path,
         )
 
 
@@ -207,7 +207,7 @@ def test_failed_download_preserves_existing_destination(client, sdk):
     target.write_bytes(b"original")
     sdk[0].get_object.side_effect = sdk_error("AccessDenied")
     with pytest.raises(CloudPermissionError):
-        download(target.name, target, client.settings.cloud_folder)
+        download(target.name, target, client.settings.cloud_folder, env_path=client.settings.env_path)
     assert target.read_bytes() == b"original"
     assert list(target.parent.iterdir()) == [target]
 
